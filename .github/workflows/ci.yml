@@ -30,5 +30,8 @@ jobs:
           python -m pytest tests/ -v
 
       - name: Run AI Safety & Evaluation Regression Gate
+        env:
+          GROQ_API_KEY: ""
         run: |
           python -m eval.runner
+

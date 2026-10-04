@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,6 +11,12 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     HOST: str = "0.0.0.0"
     PORT: int = 8000
+
+    # CORS Settings
+    # In development the default is ["*"] (open).
+    # In staging/production, set this explicitly e.g. https://yourdomain.com
+    # Leaving it empty in non-development mode disables cross-origin requests.
+    ALLOWED_ORIGINS: List[str] = ["*"]
 
     # LLM Settings
     GROQ_API_KEY: Optional[str] = None
@@ -33,6 +39,7 @@ class Settings(BaseSettings):
     TWILIO_PHONE_NUMBER: Optional[str] = None
 
     # Observability
+    METRICS_API_KEY: Optional[str] = None
     LANGCHAIN_TRACING_V2: bool = False
     LANGCHAIN_API_KEY: Optional[str] = None
     LANGCHAIN_PROJECT: str = "medical-safety-gateway"
@@ -41,6 +48,11 @@ class Settings(BaseSettings):
     def is_mock_mode(self) -> bool:
         """Return True if no Groq API key is configured, enabling Mock LLM mode."""
         return not bool(self.GROQ_API_KEY and self.GROQ_API_KEY.strip())
+
+    @property
+    def is_development(self) -> bool:
+        """Return True when running in development mode."""
+        return self.ENVIRONMENT.lower() == "development"
 
 
 settings = Settings()

@@ -37,9 +37,35 @@ class OutputGuard:
     )
 
     UNSAFE_PATTERNS = [
-        re.compile(r'\b(commit\s+suicide|self[- ]harm|overdose\s+deliberately)\b', re.IGNORECASE),
-        re.compile(r'\b(take\s+(?:50|100|\d{3,})\s*(?:tablets|pills|mg\s+of\s+cyanide))\b', re.IGNORECASE),
-        re.compile(r'\b(synthesize\s+(?:ricin|anthrax|sarin|poisons?))\b', re.IGNORECASE),
+        # --- Category 1: Self-harm and suicide ---
+        # Block any response that encourages or instructs self-harm or suicide.
+        re.compile(r'\b(commit\s+suicide|end\s+your\s+life|kill\s+yourself)\b', re.IGNORECASE),
+        re.compile(r'\b(self[- ]harm|cut\s+yourself|hurt\s+yourself\s+to\s+feel)\b', re.IGNORECASE),
+        re.compile(r'\b(overdose\s+deliberately|intentional\s+overdose)\b', re.IGNORECASE),
+
+        # --- Category 2: Dangerous dosage advice ---
+        # Block responses that suggest taking an unsafe quantity of medication.
+        # Uses a threshold (50+ tablets/pills, or any 3-digit-or-more quantity).
+        re.compile(r'\btake\s+(?:[5-9]\d|\d{3,})\s*(?:tablets?|pills?|capsules?)\b', re.IGNORECASE),
+        re.compile(r'\b(?:inject|consume|ingest)\s+(?:[5-9]\d|\d{3,})\s*mg\b', re.IGNORECASE),
+        re.compile(r'\bdouble\s+(?:or\s+triple\s+)?your\s+(?:dose|dosage|medication)\b', re.IGNORECASE),
+
+        # --- Category 3: Illegal drug or poison synthesis ---
+        # Block any instructions for creating illegal substances or biological agents.
+        re.compile(r'\b(synthesize|make|produce|manufacture)\s+(?:ricin|anthrax|sarin|cyanide|fentanyl|meth(?:amphetamine)?)\b', re.IGNORECASE),
+        re.compile(r'\bhow\s+to\s+(?:make|brew|cook)\s+(?:drugs?|heroin|cocaine|crack)\b', re.IGNORECASE),
+        re.compile(r'\b(obtain|source)\s+(?:illegal\s+)?(?:drugs?|controlled\s+substances?)\s+without\s+(?:a\s+)?prescription\b', re.IGNORECASE),
+
+        # --- Category 4: Explicit harm encouragement ---
+        # Block responses that actively encourage dangerous or violent behaviour.
+        re.compile(r'\b(poison|contaminate)\s+(?:someone(?:\'s)?|their|the)\s+(?:food|drink|water|medicine)\b', re.IGNORECASE),
+        re.compile(r'\b(stop\s+taking|discontinue)\s+(?:all\s+)?(?:your\s+)?(?:medication|insulin|chemotherapy|blood\s+thinners?)\s+immediately\b', re.IGNORECASE),
+
+        # --- Category 5: Dangerous medical misinformation ---
+        # Block clear misinformation that could cause direct physical harm.
+        re.compile(r'\bdiabetes\s+(?:can\s+be\s+)?cured\s+by\s+(?:stopping\s+insulin|not\s+eating\s+for)', re.IGNORECASE),
+        re.compile(r'\b(?:vaccines?\s+cause|vaccination\s+causes)\s+(?:autism|death|infertility)\b', re.IGNORECASE),
+        re.compile(r'\bdo\s+not\s+(?:call|visit|see)\s+(?:a\s+)?(?:doctor|hospital|emergency\s+services?)\b', re.IGNORECASE),
     ]
 
     def __init__(self):

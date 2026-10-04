@@ -33,7 +33,7 @@ def medical_tokenizer(text: str) -> List[str]:
 class MedicalRAG:
     """
     Lightweight, fast RAG engine for medical document retrieval using TF-IDF.
-    Provides context grounding from the MedQuAD dataset.
+    Provides context grounding from the configured medical Q&A CSV.
     """
 
     def __init__(self, data_path: Optional[str] = None):

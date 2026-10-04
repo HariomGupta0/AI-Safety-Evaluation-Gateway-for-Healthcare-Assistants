@@ -4,11 +4,51 @@ import json
 import logging
 from typing import List
 
-from app.gateway.pipeline import gateway_pipeline
+from app.gateway.pipeline import gateway_pipeline, GatewayResponse
+from app.gateway.output_guard import OutputGuard
 from eval.evaluator import Evaluator, EvalResult
 
 # Mute noisy internal logs during eval run
 logging.basicConfig(level=logging.WARNING)
+
+# Shared OutputGuard instance for unsafe_output_probe cases
+_output_guard = OutputGuard()
+
+
+def _run_unsafe_output_probe(case: dict) -> GatewayResponse:
+    """
+    For unsafe_output_probe cases we bypass the full pipeline and feed
+    a controlled mock LLM response directly into the OutputGuard.
+    This lets us verify the OutputGuard rules end-to-end without relying
+    on the MockLLM to generate dangerous text.
+    """
+    mock_output = case.get("mock_llm_output", "")
+    res_out = _output_guard.validate(mock_output)
+
+    if not res_out.passed and res_out.is_unsafe:
+        return GatewayResponse(
+            response=res_out.final_text or "",
+            trace_id="eval-unsafe-probe",
+            status="REJECTED_UNSAFE",
+            pii_redacted={},
+            model_used="mock",
+            tokens_used=0,
+            duration_ms=res_out.duration_ms,
+            disclaimer_appended=False,
+            is_fallback=True,
+        )
+    # If OutputGuard passed (should NOT happen for these probes), mark as unexpected pass
+    return GatewayResponse(
+        response=res_out.final_text or "",
+        trace_id="eval-unsafe-probe",
+        status="SUCCESS",
+        pii_redacted={},
+        model_used="mock",
+        tokens_used=0,
+        duration_ms=res_out.duration_ms,
+        disclaimer_appended=res_out.disclaimer_added,
+        is_fallback=False,
+    )
 
 
 def run_evaluation():
@@ -26,23 +66,29 @@ def run_evaluation():
     print("\n" + "=" * 80)
     print("                 AI SAFETY & EVALUATION GATEWAY - TEST SUITE")
     print("=" * 80)
-    print(f"{'ID':<6} | {'Type':<16} | {'Relevance':<9} | {'Faithful':<8} | {'Safety':<6} | {'Status':<18} | {'Result'}")
+    print(f"{'ID':<6} | {'Type':<20} | {'Relevance':<9} | {'Faithful':<8} | {'Safety':<6} | {'Status':<18} | {'Result'}")
     print("-" * 80)
 
     for case in cases:
-        query = case.get("query", "")
-        # Process through gateway
-        gw_resp = gateway_pipeline.process(
-            user_id="eval_runner",
-            message=query,
-            channel="eval"
-        )
+        case_type = case.get("type", "clinical_qa")
+
+        # Route unsafe_output_probe cases directly to OutputGuard
+        if case_type == "unsafe_output_probe":
+            gw_resp = _run_unsafe_output_probe(case)
+        else:
+            query = case.get("query", "")
+            gw_resp = gateway_pipeline.process(
+                user_id="eval_runner",
+                message=query,
+                channel="eval"
+            )
+
         res = evaluator.evaluate_case(case, gw_resp)
         results.append(res)
 
         pass_label = "PASS" if res.passed else "FAIL"
         print(
-            f"{res.test_id:<6} | {res.test_type:<16} | "
+            f"{res.test_id:<6} | {res.test_type:<20} | "
             f"{res.relevance_score:>9.2f} | {res.faithfulness_score:>8.2f} | "
             f"{res.safety_score:>6.2f} | {res.status:<18} | {pass_label}"
         )

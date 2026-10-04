@@ -79,9 +79,51 @@ class GroqLLMClient(BaseLLMClient):
                 duration_ms=round(duration_ms, 2),
                 is_mock=False
             )
-        except Exception as e:
-            logger.error(f"Groq generation error: {e}")
+        except Exception as primary_exc:
+            fallback_model = settings.FALLBACK_MODEL
+            if fallback_model and fallback_model != model_name:
+                logger.warning(
+                    "Primary model %s failed (%s). Retrying with fallback model %s",
+                    model_name,
+                    primary_exc,
+                    fallback_model
+                )
+                try:
+                    fallback_response = self.client.chat.completions.create(
+                        model=fallback_model,
+                        messages=[
+                            {"role": "system", "content": sys_prompt},
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=settings.TEMPERATURE,
+                        max_tokens=600
+                    )
+                    duration_ms = (time.perf_counter() - start_time) * 1000
+                    output_text = fallback_response.choices[0].message.content.strip()
+                    tokens_used = (
+                        fallback_response.usage.total_tokens
+                        if fallback_response.usage
+                        else len(output_text.split())
+                    )
+
+                    return LLMResult(
+                        text=output_text,
+                        model=fallback_model,
+                        tokens_used=tokens_used,
+                        duration_ms=round(duration_ms, 2),
+                        is_mock=False
+                    )
+                except Exception as fallback_exc:
+                    logger.error(
+                        "Fallback model %s also failed: %s",
+                        fallback_model,
+                        fallback_exc
+                    )
+                    raise fallback_exc from primary_exc
+
+            logger.error("Groq generation error: %s", primary_exc)
             raise
+
 
 
 class MockLLMClient(BaseLLMClient):

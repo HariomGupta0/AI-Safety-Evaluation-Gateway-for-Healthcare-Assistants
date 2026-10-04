@@ -46,11 +46,45 @@ class InputGuard:
     )
     
     # Government IDs (Aadhaar: 12 digits, SSN: XXX-XX-XXXX)
-    AADHAAR_PATTERN = re.compile(r'\b\d{4}\s\d{4}\s\d{4}\b')
+    AADHAAR_PATTERNS = [
+        re.compile(r'\b\d{4}\s\d{4}\s\d{4}\b'),
+        re.compile(r'\b\d{4}-\d{4}-\d{4}\b'),
+        re.compile(r'\b[2-9]\d{11}\b'),
+    ]
     SSN_PATTERN = re.compile(r'\b\d{3}-\d{2}-\d{4}\b')
+
+    # DOB patterns are label-based to avoid redacting normal medical dates.
+    DOB_PATTERNS = [
+        re.compile(
+            r'\b(?:dob|date\s+of\s+birth|birth\s+date)\s*(?:is|:|-)?\s*'
+            r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b',
+            re.IGNORECASE
+        ),
+        re.compile(
+            r'\b(?:dob|date\s+of\s+birth|birth\s+date)\s*(?:is|:|-)?\s*'
+            r'\d{1,2}\s+'
+            r'(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|'
+            r'jul|july|aug|august|sep|sept|september|oct|october|nov|'
+            r'november|dec|december)\s+\d{2,4}\b',
+            re.IGNORECASE
+        ),
+    ]
+
+    # Patient IDs are also label-based because arbitrary alphanumeric strings can be clinical values.
+    PATIENT_ID_PATTERN = re.compile(
+        r'\b(?:patient|medical\s+record|mrn|hospital)\s*(?:id|number|no\.?)\s*'
+        r'(?:is|:|-)?\s*[A-Z0-9][A-Z0-9-]{3,}\b',
+        re.IGNORECASE
+    )
+
+    ADDRESS_PATTERN = re.compile(
+        r'\b(?:home\s+address|residential\s+address|address)\s*(?:is|:|-)\s*[^.;\n]{5,80}',
+        re.IGNORECASE
+    )
 
     # --- Prompt Injection Heuristic Patterns ---
     INJECTION_PATTERNS = [
+        # Original patterns
         re.compile(r'ignore\s+(all\s+)?(previous|prior)\s+(instructions|directions|prompts)', re.IGNORECASE),
         re.compile(r'reveal\s+(your\s+)?(system\s+)?(prompt|instructions)', re.IGNORECASE),
         re.compile(r'show\s+(me\s+)?(your\s+)?(system\s+)?prompt', re.IGNORECASE),
@@ -59,6 +93,13 @@ class InputGuard:
         re.compile(r'bypass\s+(safety|guardrails?|filters?)', re.IGNORECASE),
         re.compile(r'\b(jailbreak|system\s+prompt\s+override)\b', re.IGNORECASE),
         re.compile(r'---\s*end\s+system\s+prompt\s*---', re.IGNORECASE),
+        # Expanded patterns
+        re.compile(r'forget\s+(all\s+)?(your\s+)?(previous\s+)?(instructions|rules|guidelines|training)', re.IGNORECASE),
+        re.compile(r'act\s+as\s+(an?\s+)?(unrestricted|unfiltered|uncensored)\s+assistant', re.IGNORECASE),
+        re.compile(r'\bdeveloper\s+mode\b', re.IGNORECASE),
+        re.compile(r'disable\s+(your\s+)?(safety|content)\s*(policy|filter|rules?|guidelines?)', re.IGNORECASE),
+        re.compile(r'(?:show|reveal)\s+(me\s+)?(your\s+)?(hidden|secret)\s+(instructions|rules|prompt)', re.IGNORECASE),
+        re.compile(r'pretend\s+(you\s+have\s+no\s+(rules|restrictions|guidelines|safety))', re.IGNORECASE),
     ]
 
     def redact_pii(self, text: str) -> Tuple[str, Dict[str, int]]:
@@ -82,17 +123,41 @@ class InputGuard:
             redacted = self.CARD_PATTERN.sub("[CARD]", redacted)
 
         # 3. Government IDs (Aadhaar / SSN)
-        aadhaar = self.AADHAAR_PATTERN.findall(redacted)
-        if aadhaar:
-            counts["aadhaar_id"] = len(aadhaar)
-            redacted = self.AADHAAR_PATTERN.sub("[GOV_ID]", redacted)
+        aadhaar_count = 0
+        for pattern in self.AADHAAR_PATTERNS:
+            matches = pattern.findall(redacted)
+            if matches:
+                aadhaar_count += len(matches)
+                redacted = pattern.sub("[GOV_ID]", redacted)
+        if aadhaar_count > 0:
+            counts["aadhaar_id"] = aadhaar_count
 
         ssn = self.SSN_PATTERN.findall(redacted)
         if ssn:
             counts["ssn_id"] = len(ssn)
             redacted = self.SSN_PATTERN.sub("[GOV_ID]", redacted)
 
-        # 4. Phone Redaction
+        # 4. Labeled DOB, Patient ID, and Address Redaction
+        dob_count = 0
+        for pattern in self.DOB_PATTERNS:
+            matches = pattern.findall(redacted)
+            if matches:
+                dob_count += len(matches)
+                redacted = pattern.sub("[DOB]", redacted)
+        if dob_count > 0:
+            counts["dob"] = dob_count
+
+        patient_ids = self.PATIENT_ID_PATTERN.findall(redacted)
+        if patient_ids:
+            counts["patient_id"] = len(patient_ids)
+            redacted = self.PATIENT_ID_PATTERN.sub("[PATIENT_ID]", redacted)
+
+        addresses = self.ADDRESS_PATTERN.findall(redacted)
+        if addresses:
+            counts["address"] = len(addresses)
+            redacted = self.ADDRESS_PATTERN.sub("[ADDRESS]", redacted)
+
+        # 5. Phone Redaction
         phone_count = 0
         for pattern in self.PHONE_PATTERNS:
             matches = pattern.findall(redacted)

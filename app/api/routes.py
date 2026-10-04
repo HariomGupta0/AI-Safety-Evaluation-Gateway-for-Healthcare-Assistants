@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Dict, Optional, Any
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from app.config import settings
@@ -73,9 +73,19 @@ async def health_endpoint():
 
 
 @router.get("/metrics")
-async def metrics_endpoint():
+async def metrics_endpoint(x_api_key: Optional[str] = Header(default=None)):
     """
     Observability endpoint returning latency percentiles,
     request volumes, and privacy-sanitized trace logs.
     """
-    return tracer.get_metrics_summary()
+    summary = tracer.get_metrics_summary()
+
+    metrics_key = settings.METRICS_API_KEY
+    has_trace_access = bool(metrics_key and x_api_key == metrics_key)
+    if not has_trace_access:
+        summary["recent_traces"] = []
+        summary["detail_level"] = "aggregate"
+        return summary
+
+    summary["detail_level"] = "detailed"
+    return summary

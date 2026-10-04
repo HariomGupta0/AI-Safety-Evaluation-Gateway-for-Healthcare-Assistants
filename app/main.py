@@ -15,19 +15,30 @@ logger = logging.getLogger("app.main")
 app = FastAPI(
     title="AI Safety & Evaluation Gateway",
     description=(
-        "Production-grade AI Safety and Observability Gateway for Healthcare Assistants. "
-        "Provides deterministic PII redaction, prompt injection defense, MedQuAD RAG retrieval, "
+        "Prototype AI Safety and Observability Gateway for Healthcare Assistants. "
+        "Provides deterministic PII redaction, prompt injection defense, medical Q&A RAG retrieval, "
         "and latency tracing."
     ),
     version="1.0.0"
 )
 
+# CORS configuration:
+# - Development default: allow_origins=["*"], credentials disabled (wildcard + credentials is
+#   rejected by browsers per the CORS spec, so credentials must be False with "*").
+# - Production: set ALLOWED_ORIGINS in .env to specific domains; credentials are then enabled.
+_wildcard_cors = settings.ALLOWED_ORIGINS == ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_credentials=not _wildcard_cors,   # credentials=True requires specific origins
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "X-API-Key", "X-Twilio-Signature"],
+)
+
+logger.info(
+    "CORS configured | origins=%s | environment=%s",
+    settings.ALLOWED_ORIGINS,
+    settings.ENVIRONMENT
 )
 
 from app.channels.whatsapp import router as whatsapp_router
